@@ -123,6 +123,8 @@ class PathsConfig:
     data_upload_logs_path: str = "/mnt/study/data_uploads/logs"
     active_sensing_upload_path: str = "/mnt/study/active_sensing"
     ema_file_path: str = "/mnt/study/ema_surveys"
+    scheduled_ema_path: str = "/mnt/study/scheduled-ema-surveys"
+    scheduled_config_path: str = "/mnt/study/scheduled-config-files"
     config_dir: str = "/mnt/study/config-files"
 
 

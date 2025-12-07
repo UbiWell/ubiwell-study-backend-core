@@ -590,9 +590,6 @@ def verify_admin_login(username, password):
         logging.error(f"Error verifying admin login: {e}")
         return {'success': False, 'error': str(e)}
 
-
-
-
 # def get_available_modules():
 #     """Get list of available modules for the landing page."""
 #     return [

@@ -122,6 +122,22 @@
             transform: translateY(-1px);
         }
 
+        .btn-danger {
+            background: var(--danger-color);
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-refresh {
+            background: var(--warning-color);
+        }
+
+        .btn-refresh:hover {
+            background: #b45309;
+        }
+
         .form-control {
             border-radius: 8px;
             border: 1px solid var(--gray-300);
@@ -260,138 +276,282 @@
                 </div>
             </form>
         </div>
+
+        <!-- Schedule EMA -->
+        <div class="content-section">
+            <h2 class="section-title">
+                <i class="fas fa-clock me-2"></i>Schedule EMA
+            </h2>
+            <form id="scheduleEmaForm" class="row g-3">
+                <div class="col-md-3">
+                    <label for="scheduleUserSelect" class="form-label">Select User</label>
+                    <select id="scheduleUserSelect" class="form-select" required>
+                        <option value="">Choose user...</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="scheduleFile" class="form-label">EMA File</label>
+                    <input type="file" id="scheduleFile" class="form-control" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="scheduleDateTime" class="form-label">Schedule Date & Time</label>
+                    <input type="datetime-local" id="scheduleDateTime" class="form-control" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="schedulePasskey" class="form-label">Passkey</label>
+                    <input type="password" id="schedulePasskey" class="form-control" placeholder="Enter passkey"
+                        required>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-submit">
+                        <i class="fas fa-calendar-plus me-1"></i>Schedule EMA
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Scheduled EMAs -->
+        <div class="content-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="section-title mb-0">
+                    <i class="fas fa-list-ul me-2"></i>Scheduled EMAs
+                </h2>
+                <button onclick="refreshScheduledEmas()" class="btn btn-action btn-refresh">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th><i class="fas fa-user me-1"></i>User</th>
+                            <th><i class="fas fa-calendar me-1"></i>Scheduled Time</th>
+                            <th><i class="fas fa-clock me-1"></i>Created Time</th>
+                            <th><i class="fas fa-info-circle me-1"></i>Status</th>
+                            <th><i class="fas fa-cogs me-1"></i>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scheduledEmaTable">
+                        <!-- Scheduled EMAs will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Load users on page load
-        document.addEventListener('DOMContentLoaded', function () {
-            loadUsers();
-        });
-
-        function loadUsers() {
-            fetch('/internal_web/ema-schedule/users')
+        // Fetch and display scheduled EMAs
+        function fetchScheduledEmas() {
+            fetch('/internal_web/ema-schedule/scheduled')
                 .then(response => response.json())
-                .then(data => {
-                    const userTable = document.getElementById('userTable');
-                    const userSelect = document.getElementById('userSelect');
+                .then(scheduledEmas => {
+                    const table = document.getElementById('scheduledEmaTable');
+                    table.innerHTML = '';
 
-                    userTable.innerHTML = '';
-                    userSelect.innerHTML = '<option value="">Choose user...</option>';
+                    if (scheduledEmas.length === 0) {
+                        table.innerHTML = '<tr><td colspan="5" style="text-align: center;">No scheduled EMAs</td></tr>';
+                        return;
+                    }
 
-                    data.users.forEach(user => {
-                        // Add to table
-                        const row = userTable.insertRow();
+                    scheduledEmas.forEach(ema => {
+                        let statusColor, statusCircle, actionButton, rowStyle = '';
+
+                        // Set status color, action button, and styling based on status
+                        switch (ema.status) {
+                            case 'pending':
+                                statusColor = 'yellow';
+                                actionButton = `<button class="btn btn-action btn-danger btn-sm" onclick="cancelScheduledEma('${ema.user}', '${ema.filename}')"><i class="fas fa-times me-1"></i>Cancel</button>`;
+                                break;
+                            case 'completed':
+                                statusColor = 'green';
+                                actionButton = '<span style="color: gray;">—</span>';
+                                rowStyle = 'background-color: #e8f5e9; opacity: 0.8;';
+                                break;
+                            case 'failed':
+                                statusColor = 'red';
+                                actionButton = `<button class="btn btn-action btn-danger btn-sm" onclick="cancelScheduledEma('${ema.user}', '${ema.filename}')"><i class="fas fa-times me-1"></i>Cancel</button>`;
+                                rowStyle = 'background-color: #fff3e0;';
+                                break;
+                            case 'cancelled':
+                                statusColor = 'orange';
+                                actionButton = '<span style="color: gray;">—</span>';
+                                rowStyle = 'background-color: #f5f5f5; opacity: 0.7;';
+                                break;
+                        }
+
+                        statusCircle = `<span style="display: inline-block; width: 10px; height: 10px; background-color: ${statusColor}; border-radius: 50%; margin-right: 8px;"></span>`;
+
+                        const row = document.createElement('tr');
+                        row.style.cssText = rowStyle;
+
                         row.innerHTML = `
-                            <td>${user.username}</td>
-                            <td><span class="status-badge status-${user.status === 'active' ? 'active' : 'inactive'}">${user.status}</span></td>
-                            <td>
-                                <a href="/internal_web/ema-schedule/download/${user.username}" class="btn-action">
-                                    <i class="fas fa-download me-1"></i>Download
-                                </a>
-                            </td>
+                            <td>${ema.user}</td>
+                            <td>${ema.scheduled_time}</td>
+                            <td>${ema.created_time}</td>
+                            <td>${statusCircle}${ema.status}</td>
+                            <td>${actionButton}</td>
                         `;
-
-                        // Add to select
-                        const option = document.createElement('option');
-                        option.value = user.username;
-                        option.textContent = user.username;
-                        userSelect.appendChild(option);
+                        table.appendChild(row);
                     });
                 })
                 .catch(error => {
-                    console.error('Error loading users:', error);
+                    console.error('Error fetching scheduled EMAs:', error);
                 });
         }
 
-        // Replace the existing replaceEmaForm event listener with this implementation
+        // Refresh scheduled EMAs manually
+        function refreshScheduledEmas() {
+            fetchScheduledEmas();
+        }
 
-        document.getElementById('replaceEmaForm').addEventListener('submit', async function (e) {
-            e.preventDefault();
-            const button = e.target.querySelector('button[type="submit"]');
+        // Cancel a scheduled EMA
+        function cancelScheduledEma(user, filename) {
+            if (!confirm(`Are you sure you want to cancel the scheduled EMA for ${user}?`)) {
+                return;
+            }
 
-            // Show loading state
-            const originalText = button.innerHTML;
-            button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Replacing...';
-            button.disabled = true;
+            const password = prompt('Enter password:');
+            if (!password) return;
 
-            try {
-                const username = document.getElementById('userSelect').value;
-                const fileInput = document.getElementById('fileReplace');
-                const passkey = document.getElementById('replacePasskey').value;
+            fetch(`/internal_web/ema-schedule/scheduled/${user}/${filename}?password=${password}`, {
+                method: 'DELETE'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message || data.error);
+                    fetchScheduledEmas();
+                })
+                .catch(error => {
+                    alert('Error cancelling scheduled EMA: ' + error);
+                });
+        }
 
-                if (!username || !fileInput.files[0] || !passkey) {
-                    showAlert('Please fill in all fields', 'warning');
-                    return;
-                }
+        document.addEventListener('DOMContentLoaded', () => {
+            const userTable = document.getElementById('userTable');
+            const userSelect = document.getElementById('userSelect');
+            const scheduleUserSelect = document.getElementById('scheduleUserSelect');
 
-                // Create FormData object
+            // Fetch users and populate table and dropdown
+            function fetchUsers() {
+                fetch('/internal_web/ema-schedule/users')
+                    .then(response => response.json())
+                    .then(users => {
+                        userTable.innerHTML = '';
+                        userSelect.innerHTML = '';
+                        scheduleUserSelect.innerHTML = '';
+                        users.forEach(user => {
+                            // Determine status circle color
+                            const statusCircle = user.status === 'active'
+                                ? `<span style="display: inline-block; width: 10px; height: 10px; background-color: green; border-radius: 50%;"></span>`
+                                : `<span style="display: inline-block; width: 10px; height: 10px; background-color: red; border-radius: 50%;"></span>`;
+
+                            // Populate table
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${user.name}</td>
+                                <td>${statusCircle} ${user.status}</td>
+                                <td><button class="btn btn-action btn-sm" onclick="downloadEma('${user.name}')"><i class="fas fa-download me-1"></i>Download</button></td>
+                            `;
+                            userTable.appendChild(row);
+
+                            // Populate dropdowns
+                            const option = document.createElement('option');
+                            option.value = user.name;
+                            option.textContent = user.name;
+                            userSelect.appendChild(option);
+
+                            const scheduleOption = document.createElement('option');
+                            scheduleOption.value = user.name;
+                            scheduleOption.textContent = user.name;
+                            scheduleUserSelect.appendChild(scheduleOption);
+                        });
+                    });
+            }
+
+            // Download EMA
+            window.downloadEma = function (username) {
+                window.location.href = `/internal_web/ema-schedule/download/${username}`;
+            };
+
+            // Replace EMA
+            document.getElementById('replaceEmaForm').addEventListener('submit', event => {
+                event.preventDefault();
                 const formData = new FormData();
-                formData.append('username', username);
-                formData.append('file', fileInput.files[0]);
-                formData.append('passkey', passkey);
+                formData.append('user', userSelect.value);
+                formData.append('file', document.getElementById('fileReplace').files[0]);
+                formData.append('password', document.getElementById('replacePasskey').value);
 
-                const response = await fetch('/internal_web/ema-schedule/replace-ema', {
+                fetch('/internal_web/ema-schedule/replace-ema', {
                     method: 'POST',
-                    body: formData
-                });
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message || data.error);
+                        fetchUsers();
+                    });
+            });
 
-                const result = await response.json();
+            // Add User
+            document.getElementById('addUserForm').addEventListener('submit', event => {
+                event.preventDefault();
+                const formData = new FormData();
+                formData.append('user', document.getElementById('newUserName').value);
+                formData.append('file', document.getElementById('fileAdd').files[0]);
+                formData.append('password', document.getElementById('addUserPasskey').value);
 
-                if (result.success) {
-                    showAlert(`EMA schedule successfully replaced for ${username}!`, 'success');
-                    // Reset form
-                    document.getElementById('replaceEmaForm').reset();
-                    // Reload users to update status
-                    loadUsers();
-                } else {
-                    showAlert(`Error: ${result.error}`, 'danger');
-                }
-            } catch (error) {
-                showAlert(`Error: ${error.message}`, 'danger');
-            } finally {
-                // Restore button state
-                button.innerHTML = originalText;
-                button.disabled = false;
+                fetch('/internal_web/ema-schedule/add-user', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message || data.error);
+                        fetchUsers();
+                    });
+            });
+
+            // Schedule EMA
+            document.getElementById('scheduleEmaForm').addEventListener('submit', event => {
+                event.preventDefault();
+                const formData = new FormData();
+                formData.append('user', scheduleUserSelect.value);
+                formData.append('file', document.getElementById('scheduleFile').files[0]);
+                formData.append('datetime', document.getElementById('scheduleDateTime').value);
+                formData.append('password', document.getElementById('schedulePasskey').value);
+
+                fetch('/internal_web/ema-schedule/schedule-ema', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message || data.error);
+                        fetchUsers();
+                        fetchScheduledEmas();
+
+                        // Clear form fields after successful submission
+                        if (data.message && !data.error) {
+                            scheduleUserSelect.value = '';
+                            document.getElementById('scheduleFile').value = '';
+                            document.getElementById('scheduleDateTime').value = '';
+                            document.getElementById('schedulePasskey').value = '';
+                        }
+                    });
+            });
+
+            fetchScheduledEmas();
+
+            // Periodic polling to refresh user data
+            function startPolling(interval = 600000) { // 10 minutes
+                setInterval(fetchUsers, interval);
             }
-        });
 
-        // Add this helper function if it doesn't exist
-        function showAlert(message, type = 'info') {
-            // Check if alert container exists, if not create one
-            let alertContainer = document.querySelector('.alert-container');
-            if (!alertContainer) {
-                alertContainer = document.createElement('div');
-                alertContainer.className = 'alert-container';
-                document.querySelector('.container').insertBefore(
-                    alertContainer,
-                    document.querySelector('.content-section')
-                );
-            }
+            // Initial fetch and polling
+            fetchUsers();
+            startPolling();
 
-            const alertHtml = `
-        <div class="alert alert-${type} alert-dismissible fade show" role="alert" style="border-radius: 12px; margin-bottom: 1rem;">
-            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'danger' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-            alertContainer.innerHTML = alertHtml;
-
-            // Auto-dismiss after 5 seconds
-            setTimeout(() => {
-                const alert = alertContainer.querySelector('.alert');
-                if (alert) {
-                    const bsAlert = new bootstrap.Alert(alert);
-                    bsAlert.close();
-                }
-            }, 5000);
-        }
-
-        document.getElementById('addUserForm').addEventListener('submit', function (e) {
-            e.preventDefault();
-            // Add form submission logic here
-            alert('Add user functionality will be implemented');
         });
     </script>
 </body>

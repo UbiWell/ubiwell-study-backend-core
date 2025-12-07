@@ -10,6 +10,8 @@ import time
 import io
 import csv
 import shutil
+import glob
+import threading
 from datetime import datetime, timedelta
 from collections import defaultdict
 from typing import Dict, Any
@@ -22,6 +24,9 @@ from study_framework_core.core.config import get_config
 from study_framework_core.core.handlers import get_db, verify_admin_login
 from study_framework_core.core.dashboard import DashboardBase
 from study_framework_core.core.landing_page import LandingPageBase
+
+# Add these global variables at the top after imports
+active_timers = {}
 
 
 def setup_internal_web_logging():
@@ -146,6 +151,34 @@ class InternalWebBase:
         self.api.add_resource(AddUserFile, '/ema-schedule/add-user')
         self.api.add_resource(DownloadUserFile, '/ema-schedule/download/<string:user>')
         self.api.add_resource(EmaFrontend, '/ema-schedule')
+
+        # Config Schedule routes
+        self.api.add_resource(UsersConfig, '/config-schedule/users')
+        # self.api.add_resource(
+        #     ReplaceEMA, '/config-schedule/replace-ema',
+        #     resource_class_kwargs={'ema_type': 'config'}
+        # )
+        # self.api.add_resource(
+        #     AddUserFile, '/config-schedule/add-user',
+        #     resource_class_kwargs={'ema_type': 'config'}
+        # )
+        # self.api.add_resource(
+        #     DownloadUserFile, '/config-schedule/download/<string:user>',
+        #     resource_class_kwargs={'ema_type': 'config'}
+        # )
+        self.api.add_resource(
+            ScheduleFile, '/config-schedule/schedule-config',
+            resource_class_kwargs={'file_type': 'config'}
+        )
+        self.api.add_resource(
+            ScheduledFiles, '/config-schedule/scheduled',
+            '/config-schedule/scheduled/<string:user>',
+            resource_class_kwargs={'file_type': 'config'}
+        )
+        self.api.add_resource(
+            CancelScheduledFile, '/config-schedule/scheduled/<string:user>/<string:filename>',
+            resource_class_kwargs={'file_type': 'config'}
+        )
         self.api.add_resource(ConfigFrontend, '/config-schedule')
         
         # User Management Routes
@@ -1028,3 +1061,327 @@ class DownloadUserFile(Resource):
         except Exception as e:
             logging.error(f"Error downloading {self.ema_type} file for user {user}: {e}")
             return jsonify({'error': f'Failed to download {self.ema_type} file'}), 500
+
+class ScheduleFile(Resource):
+    """Schedule an EMA or Config file for future deployment."""
+    def __init__(self, file_type: str = "ema"):
+        self.file_type = file_type
+        self.config = get_config()
+        
+    def post(self):
+        if 'admin_logged_in' not in session:
+            return redirect('/internal_web/login')
+        
+        try:
+            user = request.form.get('user')
+            file = request.files.get('file')
+            datetime_str = request.form.get('datetime')
+            password = request.form.get('password')
+            
+            # Validate required fields
+            if not user:
+                return jsonify({'error': 'User is required'}), 400
+            if not file:
+                return jsonify({'error': 'File is required'}), 400
+            if not datetime_str:
+                return jsonify({'error': 'Datetime is required'}), 400
+            if not password:
+                return jsonify({'error': 'Password is required'}), 400
+            
+            # Check password
+            if password != self.config.security.announcement_pass_key:
+                return jsonify({'error': 'Invalid password'}), 403
+            
+            # Parse datetime and create timestamp
+            try:
+                dt = datetime.strptime(datetime_str, '%Y-%m-%dT%H:%M')
+                timestamp = int(dt.timestamp())
+            except ValueError:
+                return jsonify({'error': 'Invalid datetime format'}), 400
+            
+            # Determine base directory and file naming
+            if self.file_type == "ema":
+                base_dir = self.config.paths.scheduled_ema_path
+                file_prefix = 'ema'
+            else:
+                base_dir = self.config.paths.scheduled_config_path
+                file_prefix = 'config'
+            
+            # Create user directory if it doesn't exist
+            user_path = os.path.join(base_dir, user)
+            os.makedirs(user_path, exist_ok=True)
+            
+            # Create filename with timestamp
+            file_name = f'{file_prefix}_{timestamp}.json'
+            
+            # Save the file
+            saved_file_path = os.path.join(user_path, file_name)
+            file.save(saved_file_path)
+            
+            # Schedule the timer for activation
+            delay = timestamp - time.time()
+            if delay > 0:
+                timer_key = f"{user}_{timestamp}"
+                timer = threading.Timer(delay, self._activate_scheduled_file, args=[user, file_name, self.file_type])
+                active_timers[timer_key] = timer
+                timer.start()
+                logging.info(f"Scheduled {self.file_type} timer for user {user} at {dt.strftime('%Y-%m-%d %H:%M')}")
+            
+            logging.info(f"{self.file_type.upper()} scheduled for user {user} at {dt.strftime('%Y-%m-%d %H:%M')}")
+            return jsonify({'message': f'{self.file_type.upper()} scheduled successfully for user {user} at {dt.strftime("%Y-%m-%d %H:%M")}!'})
+            
+        except Exception as e:
+            logging.error(f"Error scheduling {self.file_type}: {e}", exc_info=True)
+            return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+    
+    def _activate_scheduled_file(self, user, filename, file_type):
+        """Activate a scheduled file by moving it to the active directory."""
+        config = self.config
+        
+        try:
+            if file_type == "ema":
+                scheduled_dir = config.paths.scheduled_ema_path
+                active_dir = config.paths.ema_file_path
+                file_name = 'ema.json'
+            else:
+                scheduled_dir = config.paths.scheduled_config_path
+                active_dir = config.paths.config_dir
+                file_name = 'config.json'
+            
+            scheduled_file_path = os.path.join(scheduled_dir, user, filename)
+            active_user_dir = os.path.join(active_dir, user)
+            active_file_path = os.path.join(active_user_dir, file_name)
+            
+            # Create active directory if it doesn't exist
+            os.makedirs(active_user_dir, exist_ok=True)
+            
+            # Copy scheduled file to active location
+            shutil.copy2(scheduled_file_path, active_file_path)
+            
+            # Move scheduled file to completed subdirectory
+            completed_dir = os.path.join(scheduled_dir, user, 'completed')
+            os.makedirs(completed_dir, exist_ok=True)
+            shutil.move(scheduled_file_path, os.path.join(completed_dir, filename))
+            
+            logging.info(f"Activated scheduled {file_type} for user {user}: {filename}")
+            
+        except Exception as e:
+            logging.error(f"Error activating scheduled {file_type} for user {user}: {e}")
+
+
+class ScheduledFiles(Resource):
+    """Get all scheduled files (pending, completed, cancelled, failed)."""
+    def __init__(self, file_type: str = "ema"):
+        self.file_type = file_type
+        self.config = get_config()
+        
+    def get(self, user=None):
+        if 'admin_logged_in' not in session:
+            return redirect('/internal_web/login')
+        
+        try:
+            scheduled_files = []
+            
+            if self.file_type == "ema":
+                base_dir = self.config.paths.scheduled_ema_path
+                file_pattern = 'ema_*.json'
+            else:
+                base_dir = self.config.paths.scheduled_config_path
+                file_pattern = 'config_*.json'
+            
+            if not os.path.exists(base_dir):
+                return jsonify([])
+            
+            # Get list of users to check
+            users_to_check = [user] if user else os.listdir(base_dir)
+            
+            current_time = time.time()
+            
+            for user_dir in users_to_check:
+                user_path = os.path.join(base_dir, user_dir)
+                if not os.path.isdir(user_path):
+                    continue
+                
+                # 1. Look for ACTIVE scheduled files (pending or failed)
+                scheduled_file_list = glob.glob(os.path.join(user_path, file_pattern))
+                
+                for scheduled_file in scheduled_file_list:
+                    try:
+                        filename = os.path.basename(scheduled_file)
+                        prefix = 'ema_' if self.file_type == 'ema' else 'config_'
+                        timestamp_str = filename.replace(prefix, '').replace('.json', '')
+                        scheduled_timestamp = int(timestamp_str)
+                        
+                        file_creation_time = os.path.getctime(scheduled_file)
+                        
+                        scheduled_time = datetime.fromtimestamp(scheduled_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                        created_time = datetime.fromtimestamp(file_creation_time).strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Determine status: pending or failed
+                        if scheduled_timestamp > current_time:
+                            status = 'pending'
+                        else:
+                            status = 'failed'
+                        
+                        scheduled_files.append({
+                            'user': user_dir,
+                            'filename': filename,
+                            'scheduled_time': scheduled_time,
+                            'scheduled_timestamp': scheduled_timestamp,
+                            'created_time': created_time,
+                            'status': status
+                        })
+                        
+                    except (ValueError, OSError) as e:
+                        logging.error(f"Error processing scheduled file {scheduled_file}: {e}")
+                        continue
+                
+                # 2. Look for COMPLETED files
+                completed_dir = os.path.join(user_path, 'completed')
+                if os.path.exists(completed_dir):
+                    completed_files = glob.glob(os.path.join(completed_dir, file_pattern))
+                    
+                    for completed_file in completed_files:
+                        try:
+                            filename = os.path.basename(completed_file)
+                            prefix = 'ema_' if self.file_type == 'ema' else 'config_'
+                            timestamp_str = filename.replace(prefix, '').replace('.json', '')
+                            scheduled_timestamp = int(timestamp_str)
+                            
+                            file_creation_time = os.path.getctime(completed_file)
+                            
+                            scheduled_time = datetime.fromtimestamp(scheduled_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                            created_time = datetime.fromtimestamp(file_creation_time).strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            scheduled_files.append({
+                                'user': user_dir,
+                                'filename': filename,
+                                'scheduled_time': scheduled_time,
+                                'scheduled_timestamp': scheduled_timestamp,
+                                'created_time': created_time,
+                                'status': 'completed'
+                            })
+                            
+                        except (ValueError, OSError) as e:
+                            logging.error(f"Error processing completed file {completed_file}: {e}")
+                            continue
+                
+                # 3. Look for CANCELLED files
+                cancelled_dir = os.path.join(user_path, 'cancelled')
+                if os.path.exists(cancelled_dir):
+                    cancelled_files = glob.glob(os.path.join(cancelled_dir, file_pattern))
+                    
+                    for cancelled_file in cancelled_files:
+                        try:
+                            filename = os.path.basename(cancelled_file)
+                            prefix = 'ema_' if self.file_type == 'ema' else 'config_'
+                            timestamp_str = filename.replace(prefix, '').replace('.json', '')
+                            scheduled_timestamp = int(timestamp_str)
+                            
+                            file_creation_time = os.path.getctime(cancelled_file)
+                            
+                            scheduled_time = datetime.fromtimestamp(scheduled_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                            created_time = datetime.fromtimestamp(file_creation_time).strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            scheduled_files.append({
+                                'user': user_dir,
+                                'filename': filename,
+                                'scheduled_time': scheduled_time,
+                                'scheduled_timestamp': scheduled_timestamp,
+                                'created_time': created_time,
+                                'status': 'cancelled'
+                            })
+                            
+                        except (ValueError, OSError) as e:
+                            logging.error(f"Error processing cancelled file {cancelled_file}: {e}")
+                            continue
+            
+            # Sort by scheduled time (most recent first)
+            scheduled_files.sort(key=lambda x: x['scheduled_timestamp'], reverse=True)
+            
+            return jsonify(scheduled_files)
+            
+        except Exception as e:
+            logging.error(f"Error fetching scheduled {self.file_type}s: {e}")
+            return jsonify({'error': str(e)}), 500
+
+
+class CancelScheduledFile(Resource):
+    """Cancel a scheduled file."""
+    def __init__(self, file_type: str = "ema"):
+        self.file_type = file_type
+        self.config = get_config()
+        
+    def delete(self, user, filename):
+        if 'admin_logged_in' not in session:
+            return redirect('/internal_web/login')
+        
+        try:
+            password = request.args.get('password')
+            
+            if password != self.config.security.announcement_pass_key:
+                return jsonify({'error': 'Invalid password'}), 403
+            
+            if self.file_type == "ema":
+                base_dir = self.config.paths.scheduled_ema_path
+            else:
+                base_dir = self.config.paths.scheduled_config_path
+            
+            file_path = os.path.join(base_dir, user, filename)
+            
+            if os.path.exists(file_path):
+                # Create cancelled directory if it doesn't exist
+                cancelled_dir = os.path.join(base_dir, user, 'cancelled')
+                os.makedirs(cancelled_dir, exist_ok=True)
+                
+                # Move file to cancelled directory instead of deleting
+                cancelled_file_path = os.path.join(cancelled_dir, filename)
+                shutil.move(file_path, cancelled_file_path)
+                
+                # Cancel the timer if it exists
+                prefix = 'ema_' if self.file_type == 'ema' else 'config_'
+                timestamp_str = filename.replace(prefix, '').replace('.json', '')
+                timer_key = f"{user}_{timestamp_str}"
+                if timer_key in active_timers:
+                    active_timers[timer_key].cancel()
+                    del active_timers[timer_key]
+                
+                logging.info(f"{self.file_type.upper()} cancelled for user {user}: {filename}")
+                return jsonify({'message': f'Scheduled {self.file_type.upper()} cancelled successfully'})
+            
+            return jsonify({'error': f'Scheduled {self.file_type.upper()} not found'}), 404
+            
+        except Exception as e:
+            logging.error(f"Error cancelling scheduled {self.file_type}: {e}")
+            return jsonify({'error': str(e)}), 500
+
+
+class UsersConfig(Resource):
+    """Get list of users with Config status."""
+    def get(self):
+        if 'admin_logged_in' not in session:
+            return redirect('/internal_web/login')
+        
+        config = get_config()
+        users = []
+        
+        base_dir = config.paths.config_dir
+        
+        if not os.path.exists(base_dir):
+            return jsonify(users)
+        
+        for user in os.listdir(base_dir):
+            user_path = os.path.join(base_dir, user)
+            config_path = os.path.join(user_path, 'config.json')
+            
+            if os.path.isdir(user_path):
+                try:
+                    with open(config_path, 'r') as f:
+                        data = json.load(f)
+                        is_active = bool(data)
+                except (json.JSONDecodeError, FileNotFoundError):
+                    is_active = False
+                
+                users.append({'name': user, 'status': 'active' if is_active else 'inactive'})
+        
+        return jsonify(users)
