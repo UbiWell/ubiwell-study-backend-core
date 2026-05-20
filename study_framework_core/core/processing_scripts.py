@@ -132,11 +132,40 @@ class DataProcessor:
                 ('uid', pymongo.ASCENDING),
                 ('timestamp', pymongo.ASCENDING)
             ], unique=True, dropDups=True)
-            
+
             self.db[self.config.collections.UNKNOWN_EVENTS].create_index([
                 ('uid', pymongo.ASCENDING),
                 ('timestamp', pymongo.ASCENDING)
             ], unique=True, dropDups=True)
+
+            # Android data collections (raw ingestion from .dbr files).
+            # event_id here is the per-file monotonic row counter from Android's DBAdapter,
+            # not the sensor event type (that lives in data_type). The (uid, timestamp, event_id)
+            # triple gives us a stable dedupe key for retries / re-uploads.
+            for android_collection in (
+                self.config.collections.ANDROID_LOCATION,
+                self.config.collections.ANDROID_LOCATION_PING,
+                self.config.collections.ANDROID_WIFI,
+                self.config.collections.ANDROID_WIFI_CONNECTED,
+                self.config.collections.ANDROID_BLUETOOTH,
+                self.config.collections.ANDROID_SCREEN_EVENT,
+                self.config.collections.ANDROID_BATTERY,
+                self.config.collections.ANDROID_ACTIVITY,
+                self.config.collections.ANDROID_STEPS,
+                self.config.collections.ANDROID_ACCELEROMETER,
+                self.config.collections.ANDROID_APP_USAGE,
+                self.config.collections.ANDROID_CALLLOG,
+                self.config.collections.ANDROID_SMSLOG,
+                self.config.collections.ANDROID_NOTIFICATION,
+                self.config.collections.ANDROID_RUNNING_SERVICES,
+                self.config.collections.ANDROID_SERVICES_STARTED,
+                self.config.collections.ANDROID_UNKNOWN_EVENTS,
+            ):
+                self.db[android_collection].create_index([
+                    ('uid', pymongo.ASCENDING),
+                    ('timestamp', pymongo.ASCENDING),
+                    ('event_id', pymongo.ASCENDING)
+                ], unique=True, dropDups=True)
             
             # Garmin data collections
             self.db[self.config.collections.GARMIN_HR].create_index([
@@ -651,14 +680,30 @@ class DataProcessor:
         """Process iOS sensor data from SQLite database files."""
         # Look for iOS database files (.db files)
         db_files = list(upload_path.glob("*.db"))
-        
+
         for file_path in db_files:
             try:
                 self.logger.info(f"Processing iOS database file: {file_path}")
                 self._process_ios_database(user, file_path)
-                
+
             except Exception as e:
                 self.logger.error(f"Error processing iOS database file {file_path}: {e}")
+
+        # Android .dbr files (raw ingestion, separate code path from iOS .db).
+        dbr_files = list(upload_path.glob("*.dbr"))
+        for file_path in dbr_files:
+            try:
+                self.logger.info(f"Processing Android database file: {file_path}")
+                self._process_android_database(user, file_path)
+            except Exception as e:
+                self.logger.error(f"Error processing Android database file {file_path}: {e}")
+
+        # Encrypted Android files (.dbre) are not yet supported. Leave them in place so
+        # they're visible if the Android client's ENCRYPT_FILES flag gets turned on.
+        for dbre_file in upload_path.glob("*.dbre"):
+            self.logger.warning(
+                f"Skipping encrypted Android file (decryption not yet supported): {dbre_file}"
+            )
     
     def _process_ios_database(self, user: str, db_file: Path):
         """Process iOS SQLite database file containing sensor data."""
@@ -705,6 +750,614 @@ class DataProcessor:
         except Exception as e:
             self.logger.error(f"Error processing iOS database {db_file}: {e}")
     
+    def _process_android_database(self, user: str, dbr_file: Path):
+        """Process an Android .dbr SQLite file.
+
+        Schema: { event_id, timestamp, data_type, data } where event_id is a
+        per-file monotonic row counter, data_type is the sensor event type
+        (see EventDefinition.java in the Android sensing framework), and data is a
+        UTF-8 JSON blob (or occasionally a bare scalar like "1"). Ingestion is
+        raw — payloads are kept as-is, only routed by data_type.
+        """
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(str(dbr_file))
+            cursor = conn.cursor()
+            cursor.execute("SELECT event_id, timestamp, data_type, data FROM events")
+            rows = cursor.fetchall()
+
+            for row in rows:
+                try:
+                    if len(row) >= 3:
+                        data_type = row[2]
+                        self._process_android_event_by_data_type(user, row, data_type)
+                except Exception as e:
+                    self.logger.error(f"Error processing Android row in {dbr_file}: {e}")
+                    continue
+
+            conn.close()
+
+            self.logger.info(f"Flushing records for {dbr_file}...")
+            self.flush_records()
+
+            self.archive_file(user, str(dbr_file))
+
+            self.logger.info(f"Successfully processed Android database: {dbr_file}")
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android database {dbr_file}: {e}")
+
+    def _process_android_event_by_data_type(self, user: str, row, data_type):
+        """Process Android event based on data_type (the sensor event type)."""
+        try:
+            if data_type == 2:      # Location
+                self._process_android_location_record(user, row)
+            elif data_type == 9:    # WiFi scan
+                self._process_android_wifi_record(user, row)
+            elif data_type == 10:   # Bluetooth scan
+                self._process_android_bluetooth_record(user, row)
+            elif data_type == 11:   # Services started
+                self._process_android_services_started_record(user, row)
+            elif data_type == 22:   # App usage
+                self._process_android_app_usage_record(user, row)
+            elif data_type == 91:   # WiFi connected
+                self._process_android_wifi_connected_record(user, row)
+            elif data_type == 136:  # Screen event
+                self._process_android_screen_event_record(user, row)
+            elif data_type == 171:  # Battery level
+                self._process_android_battery_record(user, row)
+            elif data_type == 199:  # Running services
+                self._process_android_running_services_record(user, row)
+            elif data_type == 200:  # Accelerometer
+                self._process_android_accelerometer_record(user, row)
+            elif data_type == 201:  # Activity recognition
+                self._process_android_activity_record(user, row)
+            elif data_type == 202:  # Step count
+                self._process_android_steps_record(user, row)
+            elif data_type == 210:  # Call log
+                self._process_android_calllog_record(user, row)
+            elif data_type == 211:  # SMS log
+                self._process_android_smslog_record(user, row)
+            elif data_type == 301:  # Notification
+                self._process_android_notification_record(user, row)
+            elif data_type == 902:  # Location ping
+                self._process_android_location_ping_record(user, row)
+            else:
+                # Unknown data_type - store in generic Android collection
+                self._process_android_unknown_event_record(user, row, data_type)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android data_type {data_type}: {e}")
+
+    def _process_android_location_record(self, user: str, row):
+        """Process Android location record (raw, no field renaming)."""
+        try:
+            # Row structure: [event_id, timestamp, data_type, data]
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_LOCATION, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android location record: {e}")
+
+    def _process_android_location_ping_record(self, user: str, row):
+        """Process Android location ping record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_LOCATION_PING, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android location_ping record: {e}")
+
+    def _process_android_wifi_record(self, user: str, row):
+        """Process Android WiFi scan record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_WIFI, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android wifi record: {e}")
+
+    def _process_android_wifi_connected_record(self, user: str, row):
+        """Process Android WiFi connected/disconnected record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_WIFI_CONNECTED, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android wifi_connected record: {e}")
+
+    def _process_android_bluetooth_record(self, user: str, row):
+        """Process Android Bluetooth scan record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_BLUETOOTH, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android bluetooth record: {e}")
+
+    def _process_android_screen_event_record(self, user: str, row):
+        """Process Android screen event record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_SCREEN_EVENT, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android screen_event record: {e}")
+
+    def _process_android_battery_record(self, user: str, row):
+        """Process Android battery level record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_BATTERY, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android battery record: {e}")
+
+    def _process_android_activity_record(self, user: str, row):
+        """Process Android activity recognition record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_ACTIVITY, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android activity record: {e}")
+
+    def _process_android_steps_record(self, user: str, row):
+        """Process Android step count record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_STEPS, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android steps record: {e}")
+
+    def _process_android_accelerometer_record(self, user: str, row):
+        """Process Android accelerometer record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_ACCELEROMETER, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android accelerometer record: {e}")
+
+    def _process_android_app_usage_record(self, user: str, row):
+        """Process Android app usage record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_APP_USAGE, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android app_usage record: {e}")
+
+    def _process_android_calllog_record(self, user: str, row):
+        """Process Android call log record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_CALLLOG, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android calllog record: {e}")
+
+    def _process_android_smslog_record(self, user: str, row):
+        """Process Android SMS log record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_SMSLOG, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android smslog record: {e}")
+
+    def _process_android_notification_record(self, user: str, row):
+        """Process Android notification record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_NOTIFICATION, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android notification record: {e}")
+
+    def _process_android_services_started_record(self, user: str, row):
+        """Process Android services_started lifecycle record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_SERVICES_STARTED, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android services_started record: {e}")
+
+    def _process_android_running_services_record(self, user: str, row):
+        """Process Android running_services heartbeat record (raw, no field renaming)."""
+        try:
+            event_id, timestamp, data_type, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_RUNNING_SERVICES, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android running_services record: {e}")
+
+    def _process_android_unknown_event_record(self, user: str, row, data_type):
+        """Process Android event with an unrecognized data_type (raw, no field renaming)."""
+        try:
+            event_id, timestamp, _, data_blob = row
+
+            if isinstance(data_blob, (bytes, bytearray, memoryview)):
+                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+            elif data_blob is None:
+                data_text = ""
+            else:
+                data_text = str(data_blob)
+
+            try:
+                data = json.loads(data_text) if data_text else None
+            except (json.JSONDecodeError, ValueError):
+                data = data_text
+
+            record = {
+                'uid': user,
+                'event_id': int(event_id) if event_id is not None else None,
+                'timestamp': float(timestamp) if timestamp is not None else None,
+                'data_type': int(data_type),
+                'data': data,
+                'processed_at': datetime.now().timestamp(),
+            }
+
+            self.add_record(self.config.collections.ANDROID_UNKNOWN_EVENTS, record)
+
+        except Exception as e:
+            self.logger.error(f"Error processing Android unknown event record (data_type={data_type}): {e}")
+
     def _process_event_by_id(self, user: str, row, event_id):
         """Process event based on event_id."""
         try:

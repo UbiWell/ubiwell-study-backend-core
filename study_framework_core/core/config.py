@@ -26,7 +26,26 @@ class CollectionNames:
     IOS_ACTIVITY = 'ios_activity'
     IOS_ACCELEROMETER = 'ios_accelerometer'
     IOS_CALLLOG = 'ios_calllog'
-    
+
+    # Android data collections (raw ingestion from .dbr files)
+    ANDROID_LOCATION = 'android_location'
+    ANDROID_LOCATION_PING = 'android_location_ping'
+    ANDROID_WIFI = 'android_wifi'
+    ANDROID_WIFI_CONNECTED = 'android_wifi_connected'
+    ANDROID_BLUETOOTH = 'android_bluetooth'
+    ANDROID_SCREEN_EVENT = 'android_screen_event'
+    ANDROID_BATTERY = 'android_battery'
+    ANDROID_ACTIVITY = 'android_activity'
+    ANDROID_STEPS = 'android_steps'
+    ANDROID_ACCELEROMETER = 'android_accelerometer'
+    ANDROID_APP_USAGE = 'android_app_usage'
+    ANDROID_CALLLOG = 'android_calllog'
+    ANDROID_SMSLOG = 'android_smslog'
+    ANDROID_NOTIFICATION = 'android_notification'
+    ANDROID_RUNNING_SERVICES = 'android_running_services'
+    ANDROID_SERVICES_STARTED = 'android_services_started'
+    ANDROID_UNKNOWN_EVENTS = 'android_unknown_events'
+
     # Garmin data collections
     GARMIN_HR = 'garmin_hr'
     GARMIN_STRESS = 'garmin_stress'
