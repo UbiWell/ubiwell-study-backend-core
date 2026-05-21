@@ -13,6 +13,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from collections import defaultdict
+from datetime import datetime
+from typing import List, Tuple, Dict, Any
 
 import pandas as pd
 import pymongo
@@ -31,6 +33,13 @@ class DataProcessor:
         self.db = get_db()
         self.records = {}  # For batch processing
         self.batch_size = 2000  # Batch size for bulk inserts
+
+        # Set to True to store accelerometer as time-windowed chunks (≤30 s / ≤750 samples per doc).
+        # Set to False to store one document per sample (original behaviour).
+        self.CHUNK_ACCELEROMETER = True
+        self._ACC_MAX_CHUNK_SECONDS = 30.0
+        self._ACC_MAX_SAMPLES_PER_CHUNK = 750
+
         self.setup_logging()
         self.init_collections()  # Initialize collections with indexes
     
@@ -264,6 +273,48 @@ class DataProcessor:
         except Exception as e:
             self.logger.error(f"Error archiving file {file_path}: {e}")
     
+    def _build_accelerometer_chunk_records(self,  user: str, acc_df) -> List[Tuple[str, Dict[str, Any]]]:
+
+        """Return (collection, record) tuples with accelerometer samples chunked into
+        windows of at most _ACC_MAX_CHUNK_SECONDS seconds or _ACC_MAX_SAMPLES_PER_CHUNK samples."""
+        out: List[Tuple[str, Dict[str, Any]]] = []
+        if acc_df is None or acc_df.empty:
+            return out
+
+        df = acc_df.copy()
+        df['_ts'] = df['timestamp'].astype(float) + df['micros'].astype(float) / 1_000_000
+        df = df.sort_values('_ts').reset_index(drop=True)
+        ts = df['_ts']
+        n = len(df)
+        processed_at = datetime.now().timestamp()
+
+        start = 0
+        while start < n:
+            end = start + 1
+            while end < n:
+                if (float(ts.iloc[end] - ts.iloc[start]) > self._ACC_MAX_CHUNK_SECONDS
+                        or (end - start) >= self._ACC_MAX_SAMPLES_PER_CHUNK):
+                    break
+                end += 1
+            sl = df.iloc[start:end]
+            ts_list = sl['_ts'].astype(float).tolist()
+            rec = {
+                'uid': user,
+                'timestamp': ts_list[0],
+                'window_end': ts_list[-1],
+                'sample_count': len(ts_list),
+                'timestamps': ts_list,
+                'x': sl['x'].astype(float).tolist(),
+                'y': sl['y'].astype(float).tolist(),
+                'z': sl['z'].astype(float).tolist(),
+                'event_id': 447,
+                'processed_at': processed_at,
+            }
+            out.append((self.config.collections.GARMIN_ACCELEROMETER, rec))
+            start = end
+
+        return out
+
     def process_garmin_fit_file(self, user: str, input_file: str, 
                                output_path: Optional[str] = None,
                                types_to_process: Optional[str] = None,
@@ -397,10 +448,13 @@ class DataProcessor:
                 try:
                     if "ACCELEROMETER" in csv_file.name:
                         acc_df = pd.read_csv(csv_file)
-                        for row in acc_df.itertuples(index=False):
-                            record = self._handle_garmin_accelerometer(user, row)
-                            if record:
-                                records.append(record)
+                        if self.CHUNK_ACCELEROMETER:
+                            records.extend(self._build_accelerometer_chunk_records(user, acc_df))
+                        else:
+                            for row in acc_df.itertuples(index=False):
+                                record = self._handle_garmin_accelerometer(user, row)
+                                if record:
+                                    records.append(record)
                     
                     elif "BBI" in csv_file.name:
                         self.logger.info(f"Processing BBI data for user {user} in file {csv_file}")
