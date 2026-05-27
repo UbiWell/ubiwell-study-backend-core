@@ -830,531 +830,213 @@ class DataProcessor:
         except Exception as e:
             self.logger.error(f"Error processing Android data_type {data_type}: {e}")
 
-    def _process_android_location_record(self, user: str, row):
-        """Process Android location record (raw, no field renaming)."""
+    def _decode_android_payload(self, data_blob):
+        """Decode an Android ``.dbr`` data column blob and JSON-parse when possible.
+
+        Returns the parsed value (dict / list / scalar), the raw text if JSON
+        parsing fails, or None for empty/null blobs. See
+        ``docs/ANDROID_SCHEMA_DESIGN.md`` for the schema this feeds into.
+        """
+        if isinstance(data_blob, (bytes, bytearray, memoryview)):
+            data_text = bytes(data_blob).decode("utf-8", errors="ignore")
+        elif data_blob is None:
+            data_text = ""
+        else:
+            data_text = str(data_blob)
+
         try:
-            # Row structure: [event_id, timestamp, data_type, data]
-            event_id, timestamp, data_type, data_blob = row
+            return json.loads(data_text) if data_text else None
+        except (json.JSONDecodeError, ValueError):
+            return data_text
 
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
+    def _android_base_record(self, user, row):
+        """Build the reserved-field portion of an android document.
 
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
+        Returns ``(payload, base)`` where ``payload`` is the decoded sensor
+        data and ``base`` carries ``uid``, ``event_id``, ``timestamp``,
+        ``data_type``, ``processed_at``. Callers add payload fields on top
+        per the rules in ``docs/ANDROID_SCHEMA_DESIGN.md``.
+        """
+        event_id, timestamp, data_type, data_blob = row
+        payload = self._decode_android_payload(data_blob)
+        base = {
+            'uid': user,
+            'event_id': int(event_id) if event_id is not None else None,
+            'timestamp': float(timestamp) if timestamp is not None else None,
+            'data_type': int(data_type),
+            'processed_at': datetime.now().timestamp(),
+        }
+        return payload, base
 
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+    def _process_android_location_record(self, user: str, row):
+        """Process Android location record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
+        try:
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_LOCATION, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android location record: {e}")
 
     def _process_android_location_ping_record(self, user: str, row):
-        """Process Android location ping record (raw, no field renaming)."""
+        """Process Android location ping record (scalar payload dropped, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            _, record = self._android_base_record(user, row)
             self.add_record(self.config.collections.ANDROID_LOCATION_PING, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android location_ping record: {e}")
 
     def _process_android_wifi_record(self, user: str, row):
-        """Process Android WiFi scan record (raw, no field renaming)."""
+        """Process Android WiFi scan record (wrapper key lowercased, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update({k.lower(): v for k, v in payload.items()})
             self.add_record(self.config.collections.ANDROID_WIFI, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android wifi record: {e}")
 
     def _process_android_wifi_connected_record(self, user: str, row):
-        """Process Android WiFi connected/disconnected record (raw, no field renaming)."""
+        """Process Android WiFi connected/disconnected record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_WIFI_CONNECTED, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android wifi_connected record: {e}")
 
     def _process_android_bluetooth_record(self, user: str, row):
-        """Process Android Bluetooth scan record (raw, no field renaming)."""
+        """Process Android Bluetooth scan record (wrapper key lowercased, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update({k.lower(): v for k, v in payload.items()})
             self.add_record(self.config.collections.ANDROID_BLUETOOTH, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android bluetooth record: {e}")
 
     def _process_android_screen_event_record(self, user: str, row):
-        """Process Android screen event record (raw, no field renaming)."""
+        """Process Android screen event record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_SCREEN_EVENT, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android screen_event record: {e}")
 
     def _process_android_battery_record(self, user: str, row):
-        """Process Android battery level record (raw, no field renaming)."""
+        """Process Android battery level record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_BATTERY, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android battery record: {e}")
 
     def _process_android_activity_record(self, user: str, row):
-        """Process Android activity recognition record (raw, no field renaming)."""
+        """Process Android activity recognition record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_ACTIVITY, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android activity record: {e}")
 
     def _process_android_steps_record(self, user: str, row):
-        """Process Android step count record (raw, no field renaming)."""
+        """Process Android step count record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_STEPS, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android steps record: {e}")
 
     def _process_android_accelerometer_record(self, user: str, row):
-        """Process Android accelerometer record (raw, no field renaming)."""
+        """Process Android accelerometer record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_ACCELEROMETER, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android accelerometer record: {e}")
 
     def _process_android_app_usage_record(self, user: str, row):
-        """Process Android app usage record (raw, no field renaming)."""
+        """Process Android app usage record (wrapper key lowercased, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update({k.lower(): v for k, v in payload.items()})
             self.add_record(self.config.collections.ANDROID_APP_USAGE, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android app_usage record: {e}")
 
     def _process_android_calllog_record(self, user: str, row):
-        """Process Android call log record (raw, no field renaming)."""
+        """Process Android call log record (raw array wrapped under ``calls``, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if payload is not None:
+                record['calls'] = payload
             self.add_record(self.config.collections.ANDROID_CALLLOG, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android calllog record: {e}")
 
     def _process_android_smslog_record(self, user: str, row):
-        """Process Android SMS log record (raw, no field renaming)."""
+        """Process Android SMS log record (raw array wrapped under ``messages``, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if payload is not None:
+                record['messages'] = payload
             self.add_record(self.config.collections.ANDROID_SMSLOG, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android smslog record: {e}")
 
     def _process_android_notification_record(self, user: str, row):
-        """Process Android notification record (raw, no field renaming)."""
+        """Process Android notification record (flat schema, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_NOTIFICATION, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android notification record: {e}")
 
     def _process_android_services_started_record(self, user: str, row):
-        """Process Android services_started lifecycle record (raw, no field renaming)."""
+        """Process Android services_started lifecycle record (scalar payload dropped, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            _, record = self._android_base_record(user, row)
             self.add_record(self.config.collections.ANDROID_SERVICES_STARTED, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android services_started record: {e}")
 
     def _process_android_running_services_record(self, user: str, row):
-        """Process Android running_services heartbeat record (raw, no field renaming)."""
+        """Process Android running_services heartbeat record (flat schema; wrapper already lowercase, see docs/ANDROID_SCHEMA_DESIGN.md)."""
         try:
-            event_id, timestamp, data_type, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            if isinstance(payload, dict):
+                record.update(payload)
             self.add_record(self.config.collections.ANDROID_RUNNING_SERVICES, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android running_services record: {e}")
 
     def _process_android_unknown_event_record(self, user: str, row, data_type):
-        """Process Android event with an unrecognized data_type (raw, no field renaming)."""
+        """Process Android event with an unrecognized data_type.
+
+        Special-cased: payload is kept nested under ``data`` since the shape is
+        unknown and flattening could collide with reserved field names. See
+        docs/ANDROID_SCHEMA_DESIGN.md for the investigation workflow when this
+        collection has entries.
+        """
         try:
-            event_id, timestamp, _, data_blob = row
-
-            if isinstance(data_blob, (bytes, bytearray, memoryview)):
-                data_text = bytes(data_blob).decode("utf-8", errors="ignore")
-            elif data_blob is None:
-                data_text = ""
-            else:
-                data_text = str(data_blob)
-
-            try:
-                data = json.loads(data_text) if data_text else None
-            except (json.JSONDecodeError, ValueError):
-                data = data_text
-
-            record = {
-                'uid': user,
-                'event_id': int(event_id) if event_id is not None else None,
-                'timestamp': float(timestamp) if timestamp is not None else None,
-                'data_type': int(data_type),
-                'data': data,
-                'processed_at': datetime.now().timestamp(),
-            }
-
+            payload, record = self._android_base_record(user, row)
+            record['data_type'] = int(data_type)
+            record['data'] = payload
             self.add_record(self.config.collections.ANDROID_UNKNOWN_EVENTS, record)
-
         except Exception as e:
             self.logger.error(f"Error processing Android unknown event record (data_type={data_type}): {e}")
 
