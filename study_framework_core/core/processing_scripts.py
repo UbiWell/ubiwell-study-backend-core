@@ -1626,6 +1626,7 @@ class DataProcessor:
                 users = list(self.db['users'].find({
                     '$or': [
                         {'ios_login_time': {'$exists': True}},
+                        {'android_login_time': {'$exists': True}},
                         {'garmin_login_time': {'$exists': True}}
                     ]
                 }, {'uid': 1}))
@@ -1802,7 +1803,30 @@ class DataProcessor:
                 name='Garmin On',
                 line=dict(color='green', width=2)
             ))
-            
+
+            # Android phone metrics (only added when the user has android data for the day).
+            android_steps, android_step_times = self._get_android_steps_timeline(uid, current_date)
+            if android_step_times:
+                fig.add_trace(go.Bar(
+                    x=android_step_times,
+                    y=android_steps,
+                    name='Android Steps',
+                    yaxis='y2',
+                    marker=dict(color='purple'),
+                    opacity=0.6
+                ))
+
+            android_battery, android_battery_times = self._get_android_battery_timeline(uid, current_date)
+            if android_battery_times:
+                fig.add_trace(go.Scatter(
+                    x=android_battery_times,
+                    y=android_battery,
+                    mode='lines',
+                    name='Android Battery (%)',
+                    yaxis='y2',
+                    line=dict(color='orange', width=1, dash='dot')
+                ))
+
             # Generate x-axis tick values and labels
             tick_vals = [current_date + timedelta(hours=i) for i in range(25)]
             tick_labels = [f"{i:02}:00" for i in range(24)] + ["00:00"]
@@ -1823,7 +1847,7 @@ class DataProcessor:
                     range=[0, 3]
                 ),
                 yaxis2=dict(
-                    title='Heart Rate (BPM)',
+                    title='HR (BPM) / Steps / Battery (%)',
                     overlaying='y',
                     side='right'
                 ),
@@ -1853,7 +1877,9 @@ class DataProcessor:
             hr_durations = []
             stress_durations = []
             location_durations = []
-            
+            android_steps = []
+            android_screen_events = []
+
             # Get daily summaries
             daily_summaries = list(self.db[self.config.collections.DAILY_SUMMARY].find({
                 'uid': uid,
@@ -1862,54 +1888,70 @@ class DataProcessor:
                     '$lte': int(end_date.timestamp())
                 }
             }).sort('date', 1))
-            
+
             for summary in daily_summaries:
                 date_obj = datetime.fromtimestamp(summary['date'])
                 dates.append(date_obj.strftime('%m-%d'))
-                
-                # Get location duration from nested structure
+
+                # Get location duration from nested structure (already iOS+android combined)
                 location_data = summary.get('location', {})
                 location_durations.append(location_data.get('duration_hours', 0))
-                
+
                 # Get Garmin durations
                 hr_durations.append(summary.get('garmin_wear_duration', 0))
                 stress_durations.append(summary.get('garmin_on_duration', 0))
-            
-            # Create plot
+
+                # Get android phone activity rollups (zero for iOS-only users / older summaries)
+                android = summary.get('android_activity', {}) or {}
+                android_steps.append(int(android.get('steps', 0) or 0))
+                android_screen_events.append(int(android.get('screen_events', 0) or 0))
+
+            # Create plot — two y-axes: hours on the left for duration bars, raw counts on the right
+            # for android steps / screen events (so the order-of-magnitude difference doesn't squash them).
             fig = go.Figure()
-            
-            # Add bar traces
+
             fig.add_trace(go.Bar(
-                x=dates, 
-                y=location_durations, 
-                name='Location Duration',
-                marker_color='blue'
+                x=dates, y=location_durations,
+                name='Location Duration (h)', marker_color='blue'
             ))
-            
             fig.add_trace(go.Bar(
-                x=dates, 
-                y=hr_durations, 
-                name='Heart Rate Duration',
-                marker_color='red'
+                x=dates, y=hr_durations,
+                name='Heart Rate Duration (h)', marker_color='red'
             ))
-            
             fig.add_trace(go.Bar(
-                x=dates, 
-                y=stress_durations, 
-                name='Stress Duration',
-                marker_color='green'
+                x=dates, y=stress_durations,
+                name='Stress Duration (h)', marker_color='green'
             ))
-            
-            # Update layout
+
+            # Android count-based traces — only add when at least one day has data
+            if any(android_steps):
+                fig.add_trace(go.Scatter(
+                    x=dates, y=android_steps,
+                    name='Android Steps',
+                    mode='lines+markers',
+                    yaxis='y2',
+                    line=dict(color='purple', width=2)
+                ))
+            if any(android_screen_events):
+                fig.add_trace(go.Scatter(
+                    x=dates, y=android_screen_events,
+                    name='Android Screen Events',
+                    mode='lines+markers',
+                    yaxis='y2',
+                    line=dict(color='orange', width=2, dash='dot')
+                ))
+
             fig.update_layout(
                 title=f'Weekly Trends for {uid}',
                 xaxis_title='Date',
-                yaxis_title='Duration (Hours)',
+                yaxis=dict(title='Duration (Hours)'),
+                yaxis2=dict(title='Android Counts', overlaying='y', side='right'),
                 barmode='group',
                 height=400,
-                margin=dict(l=50, r=50, t=80, b=50)
+                margin=dict(l=50, r=50, t=80, b=50),
+                legend=dict(orientation='h', y=1.1)
             )
-            
+
             return fig.to_html(full_html=False, include_plotlyjs=False)
             
         except Exception as e:
@@ -1917,23 +1959,30 @@ class DataProcessor:
             return f"<p>Error generating weekly trends: {str(e)}</p>"
     
     def _get_location_availability(self, uid: str, current_date: datetime) -> List[int]:
-        """Get location availability for 30-minute windows."""
+        """Get location availability for 30-minute windows (1 if either iOS or android has GPS data)."""
         start_time = int(current_date.timestamp())
         end_time = int((current_date + timedelta(days=1)).timestamp())
-        
+
         location_available = []
         start_window = start_time
-        
+
         while start_window < end_time:
             end_window = start_window + 1800  # 30 minutes
-            count = self.db[self.config.collections.IOS_LOCATION].count_documents({
-                'uid': uid,
-                'event_id': 152,
-                'timestamp': {'$gte': start_window, '$lt': end_window}
+            ts_window = {'$gte': start_window, '$lt': end_window}
+
+            ios_count = self.db[self.config.collections.IOS_LOCATION].count_documents({
+                'uid': uid, 'event_id': 152, 'timestamp': ts_window
             })
-            location_available.append(1 if count > 0 else 0)
+            android_count = 0
+            if ios_count == 0:
+                # Only query android collection when iOS has nothing, to keep cost low for iOS-only users
+                android_count = self.db[self.config.collections.ANDROID_LOCATION].count_documents({
+                    'uid': uid, 'timestamp': ts_window
+                })
+
+            location_available.append(1 if (ios_count > 0 or android_count > 0) else 0)
             start_window = end_window
-        
+
         return location_available
     
     def _get_hr_data(self, uid: str, current_date: datetime) -> Tuple[List[float], List[datetime]]:
@@ -1955,6 +2004,47 @@ class DataProcessor:
         
         return hr_values, hr_times
     
+    def _get_android_steps_timeline(self, uid: str, current_date: datetime) -> Tuple[List[int], List[datetime]]:
+        """Return (steps_per_interval, interval_times) for android step data on a given day.
+
+        Each android_steps doc represents a reporting interval (with ``steps`` =
+        steps reported in that interval). Returns a sparse timeline anchored on
+        each doc's ``timestamp``, suitable for a Plotly bar/scatter trace.
+        """
+        start_time = int(current_date.timestamp())
+        end_time = int((current_date + timedelta(days=1)).timestamp())
+
+        try:
+            docs = list(self.db[self.config.collections.ANDROID_STEPS].find({
+                'uid': uid,
+                'timestamp': {'$gte': start_time, '$lt': end_time}
+            }, {'timestamp': 1, 'steps': 1}).sort('timestamp', 1))
+        except Exception as e:
+            self.logger.error(f"Error querying android steps timeline for {uid}: {e}")
+            return [], []
+
+        steps = [int(d.get('steps', 0) or 0) for d in docs]
+        times = [datetime.fromtimestamp(d['timestamp']) for d in docs]
+        return steps, times
+
+    def _get_android_battery_timeline(self, uid: str, current_date: datetime) -> Tuple[List[int], List[datetime]]:
+        """Return (battery_level_pct, sample_times) for android battery data on a given day."""
+        start_time = int(current_date.timestamp())
+        end_time = int((current_date + timedelta(days=1)).timestamp())
+
+        try:
+            docs = list(self.db[self.config.collections.ANDROID_BATTERY].find({
+                'uid': uid,
+                'timestamp': {'$gte': start_time, '$lt': end_time}
+            }, {'timestamp': 1, 'level': 1}).sort('timestamp', 1))
+        except Exception as e:
+            self.logger.error(f"Error querying android battery timeline for {uid}: {e}")
+            return [], []
+
+        levels = [int(d.get('level', 0) or 0) for d in docs]
+        times = [datetime.fromtimestamp(d['timestamp']) for d in docs]
+        return levels, times
+
     def _get_stress_availability(self, uid: str, current_date: datetime) -> List[int]:
         """Get stress availability for 30-minute windows."""
         start_time = int(current_date.timestamp())
@@ -1976,28 +2066,53 @@ class DataProcessor:
     
     def _generate_user_daily_summary(self, uid: str, start_timestamp: int, 
                                    end_timestamp: int, target_date: datetime.date):
-        """Generate daily summary for a specific user."""
+        """Generate daily summary for a specific user.
+
+        Phone metrics (``location.*``) are populated from whichever platform has
+        data: iOS via ``ios_location``, android via ``android_location``. Both are
+        also broken out into ``location_ios`` / ``location_android`` sub-documents
+        for per-platform breakdowns. Android phone activity counts live under
+        ``android_activity`` (steps, battery samples, screen events, etc.).
+        """
         try:
-            # Get location data
-            location_distance, location_duration = self._get_location_info(uid, start_timestamp, end_timestamp)
-            
+            # Get location data — iOS and android tracked separately, summed for the
+            # device-agnostic "phone location" view that the core dashboard reads.
+            ios_distance, ios_duration = self._get_location_info(uid, start_timestamp, end_timestamp)
+            android_distance, android_duration = self._get_android_location_info(
+                uid, start_timestamp, end_timestamp
+            )
+
             # Get Garmin data
             garmin_wear_duration, garmin_on_duration = self._get_garmin_info(uid, start_timestamp, end_timestamp)
-            
+
             # Get EMA data
             ema_info = self._get_ema_info(uid, start_timestamp, end_timestamp)
-            
+
+            # Get android phone activity rollups (steps, battery, screen, ...)
+            android_activity = self._get_android_phone_activity(uid, start_timestamp, end_timestamp)
+
             # Create summary document
             summary = {
                 'uid': uid,
                 'date': start_timestamp,
                 'date_str': target_date.strftime("%Y-%m-%d"),
                 'location': {
-                    'distance_traveled': location_distance,
-                    'duration_hours': location_duration
+                    # Device-agnostic phone location: sum because a single user is
+                    # expected to upload from at most one phone OS per day.
+                    'distance_traveled': ios_distance + android_distance,
+                    'duration_hours': ios_duration + android_duration,
+                },
+                'location_ios': {
+                    'distance_traveled': ios_distance,
+                    'duration_hours': ios_duration,
+                },
+                'location_android': {
+                    'distance_traveled': android_distance,
+                    'duration_hours': android_duration,
                 },
                 'garmin_wear_duration': garmin_wear_duration,
                 'garmin_on_duration': garmin_on_duration,
+                'android_activity': android_activity,
                 'ema': ema_info,
                 'generated_at': datetime.now().timestamp()
             }
@@ -2051,30 +2166,123 @@ class DataProcessor:
             return 0.0, 0.0
     
     def _calculate_distance_traveled(self, gps_records: List[Dict]) -> float:
-        """Calculate total distance traveled from GPS records."""
+        """Calculate total distance traveled from GPS records (iOS schema: lowercase ``latitude``/``longitude``)."""
+        return self._calculate_distance_from_records(gps_records, 'latitude', 'longitude')
+
+    def _calculate_distance_from_records(self, gps_records: List[Dict], lat_key: str, lon_key: str) -> float:
+        """Distance from any GPS-like records, parameterized by lat/lon field names.
+
+        Used for both iOS (lowercase keys, see ``_calculate_distance_traveled``) and
+        android (UPPERCASE keys per the flat android schema in
+        ``docs/ANDROID_SCHEMA_DESIGN.md``).
+        """
         try:
             if len(gps_records) < 2:
                 return 0.0
-            
+
             total_distance = 0.0
             for i in range(1, len(gps_records)):
                 prev = gps_records[i-1]
                 curr = gps_records[i]
-                
+
                 try:
                     dist = distance.distance(
-                        (prev.get('latitude', 0), prev.get('longitude', 0)),
-                        (curr.get('latitude', 0), curr.get('longitude', 0))
+                        (prev.get(lat_key, 0), prev.get(lon_key, 0)),
+                        (curr.get(lat_key, 0), curr.get(lon_key, 0))
                     ).meters
                     total_distance += dist
-                except:
+                except Exception:
                     continue
-            
+
             return total_distance
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating distance: {e}")
             return 0.0
+
+    def _get_android_location_info(self, uid: str, start_timestamp: int, end_timestamp: int) -> tuple:
+        """Get android location info (distance traveled, duration in hours) for a user.
+
+        Mirrors :py:meth:`_get_location_info` but reads from ``android_location``
+        and uses UPPERCASE ``LATITUDE``/``LONGITUDE`` fields per the flat android
+        schema (see ``docs/ANDROID_SCHEMA_DESIGN.md``). Returns ``(0.0, 0.0)`` when
+        the user has no android GPS data for the window.
+        """
+        try:
+            gps_records = list(self.db[self.config.collections.ANDROID_LOCATION].find({
+                'uid': uid,
+                'timestamp': {'$gte': start_timestamp, '$lt': end_timestamp}
+            }).sort('timestamp', 1))
+
+            if not gps_records:
+                return 0.0, 0.0
+
+            distance_traveled = self._calculate_distance_from_records(
+                gps_records, 'LATITUDE', 'LONGITUDE'
+            )
+
+            # Duration: same 15-minute-gap heuristic as the iOS path
+            previous_time = 0
+            gps_minutes = 0.0
+            for gps in gps_records:
+                if gps['timestamp'] - previous_time < 15 * 60:
+                    gps_minutes += float(gps['timestamp'] - previous_time) / 60
+                previous_time = gps['timestamp']
+
+            return distance_traveled, float(gps_minutes) / 60
+
+        except Exception as e:
+            self.logger.error(f"Error getting android location info for {uid}: {e}")
+            return 0.0, 0.0
+
+    def _get_android_phone_activity(self, uid: str, start_timestamp: int, end_timestamp: int) -> Dict:
+        """Get android phone-activity rollups for the daily summary.
+
+        Returns a dict with: ``steps``, ``battery_samples``, ``screen_events``,
+        ``app_usage_uploads``, ``wifi_scans``, ``running_services_pings``.
+        All counts are scoped to ``[start_timestamp, end_timestamp)``.
+        """
+        try:
+            ts_window = {'$gte': start_timestamp, '$lt': end_timestamp}
+
+            # Steps: sum across all android_steps docs (each doc is one reporting interval)
+            steps_total = 0
+            for doc in self.db[self.config.collections.ANDROID_STEPS].find(
+                {'uid': uid, 'timestamp': ts_window}, {'steps': 1}
+            ):
+                steps_total += int(doc.get('steps', 0) or 0)
+
+            battery_samples = self.db[self.config.collections.ANDROID_BATTERY].count_documents(
+                {'uid': uid, 'timestamp': ts_window}
+            )
+            screen_events = self.db[self.config.collections.ANDROID_SCREEN_EVENT].count_documents(
+                {'uid': uid, 'timestamp': ts_window}
+            )
+            app_usage_uploads = self.db[self.config.collections.ANDROID_APP_USAGE].count_documents(
+                {'uid': uid, 'timestamp': ts_window}
+            )
+            wifi_scans = self.db[self.config.collections.ANDROID_WIFI].count_documents(
+                {'uid': uid, 'timestamp': ts_window}
+            )
+            running_services_pings = self.db[self.config.collections.ANDROID_RUNNING_SERVICES].count_documents(
+                {'uid': uid, 'timestamp': ts_window}
+            )
+
+            return {
+                'steps': steps_total,
+                'battery_samples': battery_samples,
+                'screen_events': screen_events,
+                'app_usage_uploads': app_usage_uploads,
+                'wifi_scans': wifi_scans,
+                'running_services_pings': running_services_pings,
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error getting android phone activity for {uid}: {e}")
+            return {
+                'steps': 0, 'battery_samples': 0, 'screen_events': 0,
+                'app_usage_uploads': 0, 'wifi_scans': 0, 'running_services_pings': 0,
+            }
     
     def _get_garmin_info(self, uid: str, start_timestamp: int, end_timestamp: int) -> tuple:
         """Get Garmin device information for a user."""
