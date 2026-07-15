@@ -1062,18 +1062,23 @@ class DataProcessor:
             if len(row) >= 4:
                 timestamp = self._handle_timestamp_format(row[2])
                 event_data = json.loads(row[4].decode("utf-8")) if isinstance(row[4], bytes) else row[4]
-                
+
                 record = {
                     'uid': user,
                     'timestamp': timestamp,
-                    'event_id': row[2],
-                    'ema_id': str(event_data.get('ema_id', '')),
+                    'event_id': row[3],
+                    'ema_id': str(event_data.get('identifier', '')),
                     'questions': event_data.get('questions', {}),
+                    'answers': event_data.get('results', {}),
+                    'status': str(event_data.get('status', '')),
+                    'scheduled_time': event_data.get('scheduled_time', ''),
+                    'completed_time': event_data.get('completed_time', ''),
+                    'duration': event_data.get('duration'),
                     'processed_at': datetime.now().timestamp()
                 }
-                
+
                 self.add_record(self.config.collections.EMA_RESPONSE, record)
-                
+
         except Exception as e:
             self.logger.error(f"Error processing EMA response record: {e}")
     
