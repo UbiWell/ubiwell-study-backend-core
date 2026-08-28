@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -27,7 +28,7 @@
             --box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
             --box-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
-        
+
         body {
             background: var(--light-bg);
             color: var(--gray-800);
@@ -35,20 +36,20 @@
             min-height: 100vh;
             line-height: 1.6;
         }
-        
+
         .bg-gradient-primary {
             background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
         }
-        
+
         .navbar-brand {
             font-weight: 600;
             font-size: 1.5rem;
         }
-        
+
         .main-container {
             padding: 2rem 0;
         }
-        
+
         .content-section {
             background: white;
             border-radius: var(--border-radius);
@@ -56,7 +57,7 @@
             margin-bottom: 2rem;
             box-shadow: var(--box-shadow);
         }
-        
+
         .section-title {
             color: #2c3e50;
             font-weight: 600;
@@ -65,11 +66,11 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .table {
             margin-bottom: 0;
         }
-        
+
         .table thead th {
             background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             color: white;
@@ -79,15 +80,15 @@
             font-size: 0.85rem;
             letter-spacing: 0.5px;
         }
-        
+
         .table tbody tr {
             transition: background-color 0.3s ease;
         }
-        
+
         .table tbody tr:hover {
             background-color: var(--light-bg);
         }
-        
+
         .btn-action {
             background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             border: none;
@@ -98,25 +99,43 @@
             font-size: 0.85rem;
             transition: all 0.3s ease;
         }
-        
+
         .btn-action:hover {
             transform: translateY(-1px);
             box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
             color: white;
             text-decoration: none;
         }
-        
+
+        .btn-danger {
+            background: var(--danger-color);
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+            box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+        }
+
+        .btn-refresh {
+            background: var(--warning-color);
+        }
+
+        .btn-refresh:hover {
+            background: #b45309;
+            box-shadow: 0 4px 15px rgba(217, 119, 6, 0.4);
+        }
+
         .form-control {
             border-radius: var(--border-radius);
             border: 2px solid #e9ecef;
             transition: border-color 0.3s ease;
         }
-        
+
         .form-control:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
         }
-        
+
         .btn-submit {
             background: linear-gradient(135deg, var(--success-color) 0%, #20c997 100%);
             border: none;
@@ -126,35 +145,36 @@
             font-weight: 600;
             transition: all 0.3s ease;
         }
-        
+
         .btn-submit:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
             color: white;
         }
-        
+
         .status-badge {
             padding: 0.5rem 1rem;
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 600;
         }
-        
+
         .status-active {
             background: linear-gradient(135deg, var(--success-color) 0%, #20c997 100%);
             color: white;
         }
-        
+
         .status-inactive {
             background: linear-gradient(135deg, var(--danger-color) 0%, #e83e8c 100%);
             color: white;
         }
     </style>
 </head>
+
 <body>
     <!-- Navigation -->
     {% include 'navigation.html' %}
-    
+
     <!-- Main Content -->
     <div class="container main-container">
         <!-- Header -->
@@ -164,7 +184,7 @@
             </h1>
             <p class="text-muted">Manage configuration files and settings for study participants.</p>
         </div>
-        
+
         <!-- User Dashboard -->
         <div class="content-section">
             <h2 class="section-title">
@@ -185,7 +205,7 @@
                 </table>
             </div>
         </div>
-        
+
         <!-- Replace Config -->
         <div class="content-section">
             <h2 class="section-title">
@@ -204,7 +224,8 @@
                 </div>
                 <div class="col-md-4">
                     <label for="replacePasskey" class="form-label">Passkey</label>
-                    <input type="password" id="replacePasskey" class="form-control" placeholder="Enter passkey" required>
+                    <input type="password" id="replacePasskey" class="form-control" placeholder="Enter passkey"
+                        required>
                 </div>
                 <div class="col-12">
                     <button type="submit" class="btn btn-submit">
@@ -213,7 +234,7 @@
                 </div>
             </form>
         </div>
-        
+
         <!-- Add New User -->
         <div class="content-section">
             <h2 class="section-title">
@@ -230,7 +251,8 @@
                 </div>
                 <div class="col-md-4">
                     <label for="addUserPasskey" class="form-label">Passkey</label>
-                    <input type="password" id="addUserPasskey" class="form-control" placeholder="Enter passkey" required>
+                    <input type="password" id="addUserPasskey" class="form-control" placeholder="Enter passkey"
+                        required>
                 </div>
                 <div class="col-12">
                     <button type="submit" class="btn btn-submit">
@@ -239,62 +261,283 @@
                 </div>
             </form>
         </div>
+
+        <!-- Schedule Config -->
+        <div class="content-section">
+            <h2 class="section-title">
+                <i class="fas fa-clock me-2"></i>Schedule Configuration
+            </h2>
+            <form id="scheduleConfigForm" class="row g-3">
+                <div class="col-md-3">
+                    <label for="scheduleUserSelect" class="form-label">Select User</label>
+                    <select id="scheduleUserSelect" class="form-select" required>
+                        <option value="">Choose user...</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="scheduleFile" class="form-label">Config File</label>
+                    <input type="file" id="scheduleFile" class="form-control" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="scheduleDateTime" class="form-label">Schedule Date & Time</label>
+                    <input type="datetime-local" id="scheduleDateTime" class="form-control" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="schedulePasskey" class="form-label">Passkey</label>
+                    <input type="password" id="schedulePasskey" class="form-control" placeholder="Enter passkey"
+                        required>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-submit">
+                        <i class="fas fa-calendar-plus me-1"></i>Schedule Configuration
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Scheduled Configs -->
+        <div class="content-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="section-title mb-0">
+                    <i class="fas fa-list-ul me-2"></i>Scheduled Configurations
+                </h2>
+                <button onclick="refreshScheduledConfigs()" class="btn btn-action btn-refresh">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th><i class="fas fa-user me-1"></i>User</th>
+                            <th><i class="fas fa-calendar me-1"></i>Scheduled Time</th>
+                            <th><i class="fas fa-clock me-1"></i>Created Time</th>
+                            <th><i class="fas fa-info-circle me-1"></i>Status</th>
+                            <th><i class="fas fa-cogs me-1"></i>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scheduledConfigTable">
+                        <!-- Scheduled configs will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Load users on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadUsers();
-        });
-        
-        function loadUsers() {
-            fetch('/internal_web/config-schedule/users')
+        // Fetch and display scheduled configs
+        function fetchScheduledConfigs() {
+            fetch('/internal_web/config-schedule/scheduled')
                 .then(response => response.json())
-                .then(data => {
-                    const userTable = document.getElementById('userTable');
-                    const userSelect = document.getElementById('userSelect');
-                    
-                    userTable.innerHTML = '';
-                    userSelect.innerHTML = '<option value="">Choose user...</option>';
-                    
-                    data.users.forEach(user => {
-                        // Add to table
-                        const row = userTable.insertRow();
+                .then(scheduledConfigs => {
+                    const table = document.getElementById('scheduledConfigTable');
+                    table.innerHTML = '';
+
+                    if (scheduledConfigs.length === 0) {
+                        table.innerHTML = '<tr><td colspan="5" style="text-align: center;">No scheduled configs</td></tr>';
+                        return;
+                    }
+
+                    scheduledConfigs.forEach(config => {
+                        let statusColor, statusCircle, actionButton, rowStyle = '';
+
+                        // Set status color, action button, and styling based on status
+                        switch (config.status) {
+                            case 'pending':
+                                statusColor = 'yellow';
+                                actionButton = `<button class="btn btn-action btn-danger btn-sm" onclick="cancelScheduledConfig('${config.user}', '${config.filename}')"><i class="fas fa-times me-1"></i>Cancel</button>`;
+                                break;
+                            case 'completed':
+                                statusColor = 'green';
+                                actionButton = '<span style="color: gray;">—</span>';
+                                rowStyle = 'background-color: #e8f5e9; opacity: 0.8;';
+                                break;
+                            case 'failed':
+                                statusColor = 'red';
+                                actionButton = `<button class="btn btn-action btn-danger btn-sm" onclick="cancelScheduledConfig('${config.user}', '${config.filename}')"><i class="fas fa-times me-1"></i>Cancel</button>`;
+                                rowStyle = 'background-color: #fff3e0;';
+                                break;
+                            case 'cancelled':
+                                statusColor = 'orange';
+                                actionButton = '<span style="color: gray;">—</span>';
+                                rowStyle = 'background-color: #f5f5f5; opacity: 0.7;';
+                                break;
+                        }
+
+                        statusCircle = `<span style="display: inline-block; width: 10px; height: 10px; background-color: ${statusColor}; border-radius: 50%; margin-right: 8px;"></span>`;
+
+                        const row = document.createElement('tr');
+                        row.style.cssText = rowStyle;
+
                         row.innerHTML = `
-                            <td>${user.username}</td>
-                            <td><span class="status-badge status-${user.status === 'active' ? 'active' : 'inactive'}">${user.status}</span></td>
-                            <td>
-                                <a href="/internal_web/config-schedule/download/${user.username}" class="btn-action">
-                                    <i class="fas fa-download me-1"></i>Download
-                                </a>
-                            </td>
+                            <td>${config.user}</td>
+                            <td>${config.scheduled_time}</td>
+                            <td>${config.created_time}</td>
+                            <td>${statusCircle}${config.status}</td>
+                            <td>${actionButton}</td>
                         `;
-                        
-                        // Add to select
-                        const option = document.createElement('option');
-                        option.value = user.username;
-                        option.textContent = user.username;
-                        userSelect.appendChild(option);
+                        table.appendChild(row);
                     });
                 })
                 .catch(error => {
-                    console.error('Error loading users:', error);
+                    console.error('Error fetching scheduled configs:', error);
                 });
         }
-        
-        // Handle form submissions
-        document.getElementById('replaceConfigForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            // Add form submission logic here
-            alert('Config replacement functionality will be implemented');
-        });
-        
-        document.getElementById('addUserForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            // Add form submission logic here
-            alert('Add user functionality will be implemented');
+
+        // Refresh scheduled configs manually
+        function refreshScheduledConfigs() {
+            fetchScheduledConfigs();
+        }
+
+        // Cancel a scheduled config
+        function cancelScheduledConfig(user, filename) {
+            if (!confirm(`Are you sure you want to cancel the scheduled config for ${user}?`)) {
+                return;
+            }
+
+            const password = prompt('Enter password:');
+            if (!password) return;
+
+            fetch(`/internal_web/config-schedule/scheduled/${user}/${filename}?password=${password}`, {
+                method: 'DELETE'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message || data.error);
+                    fetchScheduledConfigs();
+                })
+                .catch(error => {
+                    alert('Error cancelling scheduled config: ' + error);
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const userTable = document.getElementById('userTable');
+            const userSelect = document.getElementById('userSelect');
+            const scheduleUserSelect = document.getElementById('scheduleUserSelect');
+
+            // Fetch users and populate table and dropdown
+            function fetchUsers() {
+                fetch('/internal_web/config-schedule/users')
+                    .then(response => response.json())
+                    .then(users => {
+                        userTable.innerHTML = '';
+                        userSelect.innerHTML = '';
+                        scheduleUserSelect.innerHTML = '';
+                        users.forEach(user => {
+                            // Determine status circle color
+                            const statusCircle = user.status === 'active'
+                                ? `<span style="display: inline-block; width: 10px; height: 10px; background-color: green; border-radius: 50%;"></span>`
+                                : `<span style="display: inline-block; width: 10px; height: 10px; background-color: red; border-radius: 50%;"></span>`;
+
+                            // Populate table
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td>${user.name}</td>
+                                <td>${statusCircle} ${user.status}</td>
+                                <td><button class="btn btn-action btn-sm" onclick="downloadConfig('${user.name}')"><i class="fas fa-download me-1"></i>Download</button></td>
+                            `;
+                            userTable.appendChild(row);
+
+                            // Populate dropdowns
+                            const option = document.createElement('option');
+                            option.value = user.name;
+                            option.textContent = user.name;
+                            userSelect.appendChild(option);
+
+                            const scheduleOption = document.createElement('option');
+                            scheduleOption.value = user.name;
+                            scheduleOption.textContent = user.name;
+                            scheduleUserSelect.appendChild(scheduleOption);
+                        });
+                    });
+            }
+
+            // Download Config
+            window.downloadConfig = function (username) {
+                window.location.href = `/internal_web/config-schedule/download/${username}`;
+            };
+
+            // Replace Config
+            document.getElementById('replaceConfigForm').addEventListener('submit', event => {
+                event.preventDefault();
+                const formData = new FormData();
+                formData.append('user', userSelect.value);
+                formData.append('file', document.getElementById('fileReplace').files[0]);
+                formData.append('password', document.getElementById('replacePasskey').value);
+
+                fetch('/internal_web/config-schedule/replace-ema', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message || data.error);
+                        fetchUsers();
+                    });
+            });
+
+            // Add User
+            document.getElementById('addUserForm').addEventListener('submit', event => {
+                event.preventDefault();
+                const formData = new FormData();
+                formData.append('user', document.getElementById('newUserName').value);
+                formData.append('file', document.getElementById('fileAdd').files[0]);
+                formData.append('password', document.getElementById('addUserPasskey').value);
+
+                fetch('/internal_web/config-schedule/add-user', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message || data.error);
+                        fetchUsers();
+                    });
+            });
+
+            // Schedule Config
+            document.getElementById('scheduleConfigForm').addEventListener('submit', event => {
+                event.preventDefault();
+                const formData = new FormData();
+                formData.append('user', scheduleUserSelect.value);
+                formData.append('file', document.getElementById('scheduleFile').files[0]);
+                formData.append('datetime', document.getElementById('scheduleDateTime').value);
+                formData.append('password', document.getElementById('schedulePasskey').value);
+
+                fetch('/internal_web/config-schedule/schedule-config', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message || data.error);
+                        fetchUsers();
+                        fetchScheduledConfigs();
+
+                        // Clear form fields after successful submission
+                        if (data.message && !data.error) {
+                            scheduleUserSelect.value = '';
+                            document.getElementById('scheduleFile').value = '';
+                            document.getElementById('scheduleDateTime').value = '';
+                            document.getElementById('schedulePasskey').value = '';
+                        }
+                    });
+            });
+
+            fetchScheduledConfigs();
+
+            // Periodic polling to refresh user data
+            function startPolling(interval = 600000) { // 10 minutes
+                setInterval(fetchUsers, interval);
+            }
+
+            // Initial fetch and polling
+            fetchUsers();
+            startPolling();
         });
     </script>
 </body>
+
 </html>

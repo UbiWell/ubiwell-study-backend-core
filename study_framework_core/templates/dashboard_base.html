@@ -169,6 +169,24 @@
             color: var(--gray-700);
             font-weight: 500;
         }
+
+         /* Ensure buttons in table cells don't wrap */
+        .table tbody td a {
+            white-space: nowrap;
+            display: inline-block;
+        }
+
+        /* Fix for details column to prevent button overflow */
+        .table tbody td:has(.btn-details),
+        .table tbody td:last-child {
+            white-space: nowrap;
+            min-width: 120px;
+            max-width: 200px;
+        }
+        
+        .table tbody td:has(.btn-details) {
+            text-align: center;
+        }
         
         .btn-details {
             background: var(--primary-color);
@@ -180,6 +198,9 @@
             font-size: 0.875rem;
             font-weight: 500;
             transition: all 0.2s ease;
+            display: inline-block;
+            white-space: nowrap;
+            min-width: 100px;
         }
         
         .btn-details:hover {

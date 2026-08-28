@@ -590,48 +590,47 @@ def verify_admin_login(username, password):
         logging.error(f"Error verifying admin login: {e}")
         return {'success': False, 'error': str(e)}
 
-
-def get_available_modules():
-    """Get list of available modules for the landing page."""
-    return [
-        {
-            'id': 'dashboard',
-            'name': 'Dashboard',
-            'description': 'View study compliance and data monitoring dashboard',
-            'icon': 'fas fa-chart-line',
-            'url': '/internal_web/dashboard',
-            'color': 'primary'
-        },
-        {
-            'id': 'user_management',
-            'name': 'Participant Management',
-            'description': 'Create and manage study participants',
-            'icon': 'fas fa-users',
-            'url': '/internal_web/user-management',
-            'color': 'success'
-        },
-        {
-            'id': 'ema_schedule',
-            'name': 'EMA Schedule',
-            'description': 'Manage EMA surveys and schedules',
-            'icon': 'fas fa-calendar-alt',
-            'url': '/internal_web/ema-schedule',
-            'color': 'info'
-        },
-        {
-            'id': 'config_schedule',
-            'name': 'Configuration',
-            'description': 'Manage study configuration and settings',
-            'icon': 'fas fa-cogs',
-            'url': '/internal_web/config-schedule',
-            'color': 'warning'
-        },
-        {
-            'id': 'downloads',
-            'name': 'Data Downloads',
-            'description': 'Download compliance reports and data exports',
-            'icon': 'fas fa-download',
-            'url': '/internal_web/download_compliance',
-            'color': 'secondary'
-        }
-    ]
+# def get_available_modules():
+#     """Get list of available modules for the landing page."""
+#     return [
+#         {
+#             'id': 'dashboard',
+#             'name': 'Dashboard',
+#             'description': 'View study compliance and data monitoring dashboard',
+#             'icon': 'fas fa-chart-line',
+#             'url': '/internal_web/dashboard',
+#             'color': 'primary'
+#         },
+#         {
+#             'id': 'user_management',
+#             'name': 'Participant Management',
+#             'description': 'Create and manage study participants',
+#             'icon': 'fas fa-users',
+#             'url': '/internal_web/user-management',
+#             'color': 'success'
+#         },
+#         {
+#             'id': 'ema_schedule',
+#             'name': 'EMA Schedule',
+#             'description': 'Manage EMA surveys and schedules',
+#             'icon': 'fas fa-calendar-alt',
+#             'url': '/internal_web/ema-schedule',
+#             'color': 'info'
+#         },
+#         {
+#             'id': 'config_schedule',
+#             'name': 'Configuration',
+#             'description': 'Manage study configuration and settings',
+#             'icon': 'fas fa-cogs',
+#             'url': '/internal_web/config-schedule',
+#             'color': 'warning'
+#         },
+#         {
+#             'id': 'downloads',
+#             'name': 'Data Downloads',
+#             'description': 'Download compliance reports and data exports',
+#             'icon': 'fas fa-download',
+#             'url': '/internal_web/download_compliance',
+#             'color': 'secondary'
+#         }
+#     ]

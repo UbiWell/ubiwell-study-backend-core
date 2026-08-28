@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,58 +13,75 @@
             border: none;
             margin-bottom: 20px;
         }
+
         .card-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
         }
+
         .btn-primary {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
         }
+
         .btn-success {
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             border: none;
         }
+
         .btn-info {
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
             border: none;
         }
+
         .alert {
             border-radius: 10px;
             border: none;
         }
-        .form-control, .form-select {
+
+        .form-control,
+        .form-select {
             border-radius: 8px;
             border: 1px solid #e0e0e0;
         }
-        .form-control:focus, .form-select:focus {
+
+        .form-control:focus,
+        .form-select:focus {
             border-color: #667eea;
             box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
         }
+
         .table {
             border-radius: 10px;
             overflow: hidden;
         }
+
         .table thead th {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
         }
+
         .password-field {
             font-family: 'Courier New', monospace;
             background-color: #f8f9fa;
         }
+
         .loading {
             display: none;
         }
+
         .spinner-border-sm {
             width: 1rem;
             height: 1rem;
         }
     </style>
 </head>
+
 <body class="bg-light">
+    <!-- Navigation -->
+    {% include 'navigation.html' %}
     <div class="container-fluid py-4">
         <div class="row">
             <div class="col-12">
@@ -89,13 +107,13 @@
                         <form id="singleUserForm">
                             <div class="mb-3">
                                 <label for="singleUid" class="form-label">Participant ID *</label>
-                                <input type="text" class="form-control" id="singleUid" required 
-                                       placeholder="e.g., test001, participant123">
+                                <input type="text" class="form-control" id="singleUid" required
+                                    placeholder="e.g., test001, participant123">
                             </div>
                             <div class="mb-3">
                                 <label for="singleEmail" class="form-label">Email (Optional)</label>
-                                <input type="email" class="form-control" id="singleEmail" 
-                                       placeholder="user@example.com">
+                                <input type="email" class="form-control" id="singleEmail"
+                                    placeholder="user@example.com">
                             </div>
 
                             <div class="mb-3">
@@ -125,13 +143,13 @@
                         <form id="multipleUsersForm">
                             <div class="mb-3">
                                 <label for="userPrefix" class="form-label">Participant Prefix *</label>
-                                <input type="text" class="form-control" id="userPrefix" required 
-                                       placeholder="e.g., test, participant, user">
+                                <input type="text" class="form-control" id="userPrefix" required
+                                    placeholder="e.g., test, participant, user">
                             </div>
                             <div class="mb-3">
                                 <label for="numUsers" class="form-label">Number of Participants *</label>
-                                <input type="number" class="form-control" id="numUsers" required 
-                                       min="1" max="100" value="10">
+                                <input type="number" class="form-control" id="numUsers" required min="1" max="100"
+                                    value="10">
                                 <div class="form-text">Maximum 100 participants at once</div>
                             </div>
                             <div class="mb-3">
@@ -140,8 +158,8 @@
                             </div>
                             <div class="mb-3">
                                 <label for="emailBase" class="form-label">Email Base (Optional)</label>
-                                <input type="text" class="form-control" id="emailBase" 
-                                       placeholder="e.g., study, connect-study">
+                                <input type="text" class="form-control" id="emailBase"
+                                    placeholder="e.g., study, connect-study">
                                 <div class="form-text">Will create: base+user001@gmail.com</div>
                             </div>
 
@@ -246,7 +264,7 @@
         let resultsModal;
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             resultsModal = new bootstrap.Modal(document.getElementById('resultsModal'));
             loadUsers();
         });
@@ -261,7 +279,7 @@
                 </div>
             `;
             alertContainer.innerHTML = alertHtml;
-            
+
             // Auto-dismiss after 5 seconds
             setTimeout(() => {
                 const alert = alertContainer.querySelector('.alert');
@@ -285,7 +303,7 @@
         }
 
         // Single user creation
-        document.getElementById('singleUserForm').addEventListener('submit', async function(e) {
+        document.getElementById('singleUserForm').addEventListener('submit', async function (e) {
             e.preventDefault();
             const button = e.target.querySelector('button[type="submit"]');
             showLoading(button);
@@ -324,7 +342,7 @@
         });
 
         // Multiple users creation
-        document.getElementById('multipleUsersForm').addEventListener('submit', async function(e) {
+        document.getElementById('multipleUsersForm').addEventListener('submit', async function (e) {
             e.preventDefault();
             const button = e.target.querySelector('button[type="submit"]');
             showLoading(button);
@@ -384,7 +402,7 @@
         // Display users in table
         function displayUsers(users) {
             const tbody = document.getElementById('usersTableBody');
-            
+
             if (users.length === 0) {
                 tbody.innerHTML = `
                     <tr>
@@ -414,7 +432,7 @@
         async function exportUsers() {
             try {
                 const response = await fetch('/internal_web/user-management/export');
-                
+
                 if (response.ok) {
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
@@ -438,10 +456,10 @@
         // Show user results (handles both single user and multiple users)
         function showUserResults(users, title) {
             const modalBody = document.getElementById('resultsModalBody');
-            
+
             // Handle both single user (object) and multiple users (array)
             const userArray = Array.isArray(users) ? users : [users];
-            
+
             if (userArray.length === 1) {
                 // Single user display
                 const user = userArray[0];
@@ -523,14 +541,14 @@
                     </div>
                 `;
             }
-            
+
             resultsModal.show();
         }
 
         // Show multiple user results
         function showMultipleUserResults(results, summary) {
             const modalBody = document.getElementById('resultsModalBody');
-            
+
             let tableRows = '';
             results.forEach(result => {
                 if (result.result.success) {
@@ -581,4 +599,5 @@
         }
     </script>
 </body>
+
 </html>

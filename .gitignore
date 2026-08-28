@@ -1,2 +1,18 @@
 **/.DS_Store
 
+# Ignore Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore distribution/packaging
+build/
+dist/
+*.egg-info/
+
+# Optional: virtual envs
+venv/
+env/
+
+
